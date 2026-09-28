@@ -1,6 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --ink: #172033;
+  --muted: #667085;
+  --paper: #f5f7f4;
+  --surface: rgba(255, 255, 255, 0.88);
+  --line: #e4e8e3;
+  --teal: #087f78;
+  --teal-dark: #075f5b;
+  --coral: #e56b55;
+}
 
 * {
   margin: 0;
@@ -9,9 +22,101 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--ink);
+  background: var(--paper);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+button {
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.login-page,
+.admin-page {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--paper) !important;
+  background-image:
+    linear-gradient(rgba(23, 32, 51, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 32, 51, 0.035) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+
+.login-page::before,
+.admin-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(circle at 82% 8%, rgba(8, 127, 120, 0.13), transparent 28rem), radial-gradient(circle at 10% 90%, rgba(229, 107, 85, 0.1), transparent 24rem);
+}
+
+.login-page .bg-white\/95,
+.admin-page .bg-white {
+  background: var(--surface) !important;
+  border-color: var(--line) !important;
+  box-shadow: 0 20px 60px rgba(23, 32, 51, 0.08) !important;
+  backdrop-filter: blur(14px);
+}
+
+.admin-page .bg-gray-50 {
+  background-color: #f1f4f0 !important;
+}
+
+.admin-page .bg-blue-600,
+.login-page .bg-blue-600 {
+  background-color: var(--teal) !important;
+}
+
+.admin-page .hover\:bg-blue-700:hover,
+.login-page .hover\:bg-blue-700:hover {
+  background-color: var(--teal-dark) !important;
+}
+
+.admin-page .bg-green-600 {
+  background-color: var(--coral) !important;
+}
+
+.admin-page .hover\:bg-green-700:hover {
+  background-color: #c95342 !important;
+}
+
+.premium-kicker {
+  color: var(--teal);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.35rem;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.podium-page {
+  background: radial-gradient(circle at 50% 0%, #245d63 0, #172033 42%, #0d1320 100%) !important;
 }
 
 #root {

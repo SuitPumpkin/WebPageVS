@@ -43,6 +43,7 @@ export interface RoomState {
   timerEnd: number | null;
   roundDuration: number;
   adminWs: WebSocket | null;
+  finalScores: Record<string, number>;
 }
 
 export const rooms = new Map<string, RoomState>();
@@ -79,10 +80,6 @@ function getTiedCandidates(candidates: Candidate[], scores: Map<string, number>)
   return Array.from(scoreGroups.values()).filter(group => group.length > 1);
 }
 
-function getSortedCandidates(candidates: Candidate[], scores: Map<string, number>): Candidate[] {
-  return [...candidates].sort((a, b) => (scores.get(b.id) || 0) - (scores.get(a.id) || 0));
-}
-
 export function createRoom(adminWs: WebSocket | null, roundDuration: number): { roomCode: string; state: RoomState } {
   const roomCode = generateRoomCode();
   const state: RoomState = {
@@ -95,6 +92,7 @@ export function createRoom(adminWs: WebSocket | null, roundDuration: number): { 
     timerEnd: null,
     roundDuration: roundDuration * 60 * 1000,
     adminWs: adminWs || null,
+    finalScores: {},
   };
   rooms.set(roomCode, state);
   return { roomCode, state };
@@ -108,9 +106,28 @@ export function deleteRoom(roomCode: string): void {
   rooms.delete(roomCode);
 }
 
+export function closeRoom(roomCode: string): boolean {
+  const room = rooms.get(roomCode);
+  if (!room) return false;
+
+  const message = JSON.stringify({ type: 'room_closed', payload: { roomCode } });
+  if (room.adminWs && room.adminWs.readyState === WebSocket.OPEN) {
+    room.adminWs.send(message);
+    room.adminWs.close(1000, 'Room closed by teacher');
+  }
+  room.students.forEach(student => {
+    if (student.ws && student.ws.readyState === WebSocket.OPEN) {
+      student.ws.send(message);
+      student.ws.close(1000, 'Room closed by teacher');
+    }
+  });
+  rooms.delete(roomCode);
+  return true;
+}
+
 export function addCandidate(roomCode: string, name: string, html: string, css: string): Candidate | null {
   const room = rooms.get(roomCode);
-  if (!room) return null;
+  if (!room || room.phase !== 'waiting') return null;
   
   const candidate: Candidate = {
     id: generateId(),
@@ -123,9 +140,23 @@ export function addCandidate(roomCode: string, name: string, html: string, css: 
   return candidate;
 }
 
+export function updateCandidate(roomCode: string, candidateId: string, name: string, html: string, css: string): boolean {
+  const room = rooms.get(roomCode);
+  if (!room || room.phase !== 'waiting' || !name.trim()) return false;
+
+  const candidate = room.candidates.find(item => item.id === candidateId);
+  if (!candidate) return false;
+
+  candidate.name = name.trim();
+  candidate.html = html;
+  candidate.css = css;
+  broadcastState(roomCode);
+  return true;
+}
+
 export function removeCandidate(roomCode: string, candidateId: string): void {
   const room = rooms.get(roomCode);
-  if (!room) return;
+  if (!room || room.phase !== 'waiting') return;
   
   room.candidates = room.candidates.filter(c => c.id !== candidateId);
   broadcastState(roomCode);
@@ -133,11 +164,12 @@ export function removeCandidate(roomCode: string, candidateId: string): void {
 
 export function startVoting(roomCode: string): void {
   const room = rooms.get(roomCode);
-  if (!room || room.candidates.length === 0) return;
+  if (!room || room.phase !== 'waiting' || room.candidates.length === 0) return;
   
   room.phase = 'voting';
   room.currentIndex = 0;
   room.votes = [];
+  room.finalScores = {};
   room.students.forEach(s => s.hasVoted = false);
   startTimer(roomCode);
   broadcastState(roomCode);
@@ -153,7 +185,7 @@ export function startTimer(roomCode: string): void {
 
 export function pauseTimer(roomCode: string): void {
   const room = rooms.get(roomCode);
-  if (!room || !room.timerEnd) return;
+  if (!room || room.phase !== 'voting' || !room.timerEnd) return;
   
   const remaining = room.timerEnd - Date.now();
   room.roundDuration = remaining;
@@ -163,7 +195,7 @@ export function pauseTimer(roomCode: string): void {
 
 export function nextCandidate(roomCode: string): void {
   const room = rooms.get(roomCode);
-  if (!room) return;
+  if (!room || room.phase !== 'voting') return;
   
   if (room.currentIndex < room.candidates.length - 1) {
     room.currentIndex++;
@@ -177,7 +209,7 @@ export function nextCandidate(roomCode: string): void {
 
 export function skipCandidate(roomCode: string): void {
   const room = rooms.get(roomCode);
-  if (!room) return;
+  if (!room || room.phase !== 'voting') return;
   
   room.students.forEach(s => s.hasVoted = false);
   nextCandidate(roomCode);
@@ -185,24 +217,24 @@ export function skipCandidate(roomCode: string): void {
 
 export function endVoting(roomCode: string): void {
   const room = rooms.get(roomCode);
-  if (!room) return;
+  if (!room || room.phase !== 'voting') return;
   
   room.timerEnd = null;
   
   const scores = calculateScores(room.candidates, room.votes);
-  const tiedGroups = getTiedCandidates(room.candidates, scores);
-  
-  if (tiedGroups.length > 0) {
-    room.phase = 'tiebreak';
-    const tiedCandidates = tiedGroups.flat();
-    room.candidates = tiedCandidates;
-    room.currentIndex = 0;
-    room.rankings = [];
-    room.students.forEach(s => s.hasRanked = false);
-    startTimer(roomCode);
-  } else {
-    room.phase = 'podium';
+  // Resolve ties one participant at a time until every score is unique.
+  let tiedGroups = getTiedCandidates(room.candidates, scores);
+  while (tiedGroups.length > 0) {
+    tiedGroups.forEach(group => {
+      const winner = group[Math.floor(Math.random() * group.length)];
+      scores.set(winner.id, (scores.get(winner.id) || 0) + 0.1);
+    });
+    tiedGroups = getTiedCandidates(room.candidates, scores);
   }
+
+  room.finalScores = Object.fromEntries(scores);
+  room.phase = room.candidates.length > 0 ? 'podium' : 'waiting';
+  room.timerEnd = null;
   broadcastState(roomCode);
 }
 
@@ -251,39 +283,8 @@ export function addStudent(roomCode: string, name: string, studentId?: string): 
 }
 
 export function endTiebreak(roomCode: string): void {
-  const room = rooms.get(roomCode);
-  if (!room || room.phase !== 'tiebreak') return;
-  
-  room.timerEnd = null;
-  
-  const pointsMap = new Map<string, number>();
-  room.candidates.forEach(c => pointsMap.set(c.id, 0));
-  
-  room.rankings.forEach(ranking => {
-    const n = ranking.order.length;
-    ranking.order.forEach((candidateId, index) => {
-      const points = n - index;
-      pointsMap.set(candidateId, (pointsMap.get(candidateId) || 0) + points);
-    });
-  });
-  
-  const tiedGroups = getTiedCandidates(room.candidates, pointsMap);
-  
-  if (tiedGroups.length > 0) {
-    tiedGroups.forEach(group => {
-      group.forEach(c => {
-        pointsMap.set(c.id, (pointsMap.get(c.id) || 0) + Math.random());
-      });
-    });
-  }
-  
-  const allScores = calculateScores(room.candidates, room.votes);
-  room.candidates.forEach(c => {
-    allScores.set(c.id, (allScores.get(c.id) || 0) + (pointsMap.get(c.id) || 0));
-  });
-  
-  room.phase = 'podium';
-  broadcastState(roomCode);
+  // Kept for compatibility with messages from older clients.
+  endVoting(roomCode);
 }
 
 function broadcastState(roomCode: string): void {
@@ -301,6 +302,7 @@ function broadcastState(roomCode: string): void {
       students: room.students.map(s => ({ id: s.id, name: s.name, hasVoted: s.hasVoted, hasRanked: s.hasRanked })),
       timerEnd: room.timerEnd,
       roundDuration: room.roundDuration,
+      finalScores: room.finalScores,
     },
   };
   
@@ -325,14 +327,23 @@ export function handleAdminMessage(roomCode: string, message: any): void {
     case 'add_candidate':
       addCandidate(roomCode, message.payload.name, message.payload.html, message.payload.css);
       break;
+    case 'update_candidate':
+      updateCandidate(roomCode, message.payload.candidateId, message.payload.name, message.payload.html, message.payload.css);
+      break;
     case 'remove_candidate':
       removeCandidate(roomCode, message.payload.candidateId);
+      break;
+    case 'close_room':
+      closeRoom(roomCode);
       break;
     case 'start_voting':
       startVoting(roomCode);
       break;
     case 'pause_timer':
       pauseTimer(roomCode);
+      break;
+    case 'resume_timer':
+      if (room.phase === 'voting' && !room.timerEnd) startTimer(roomCode);
       break;
     case 'next_candidate':
       nextCandidate(roomCode);

@@ -32,7 +32,7 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-700 flex items-center justify-center p-4">
+    <div className="login-page min-h-screen flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -46,6 +46,7 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
           >
             🏆
           </motion.div>
+          <p className="premium-kicker mb-2">Aula interactiva</p>
           <h1 className="text-3xl font-bold text-gray-900">WebPageVS</h1>
           <p className="text-gray-500 mt-1">Concurso de Páginas Web</p>
         </div>

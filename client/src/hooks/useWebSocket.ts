@@ -40,6 +40,7 @@ export interface RoomState {
   students: Student[];
   timerEnd: number | null;
   roundDuration: number;
+  finalScores: Record<string, number>;
 }
 
 export interface WebSocketMessage {

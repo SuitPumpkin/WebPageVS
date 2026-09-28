@@ -2,6 +2,31 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWebSocket, Candidate, RoomState } from '../hooks/useWebSocket';
 
+const tailwindScript = '<script src="https://cdn.tailwindcss.com"></script>';
+
+function buildIframeSrcDoc(candidate: Candidate): string {
+  const html = candidate.html.trim();
+  const hasTailwind = /cdn\.tailwindcss\.com/i.test(html);
+  const headAssets = `${candidate.css.trim() ? `<style>${candidate.css}</style>` : ''}${hasTailwind ? '' : tailwindScript}`;
+  if (/<html[\s>]/i.test(html)) {
+    if (/<head[\s>]/i.test(html)) {
+      return html.replace(/<head([^>]*)>/i, `<head$1>${headAssets}`);
+    }
+    return html.replace(/<html([^>]*)>/i, `<html$1><head>${headAssets}</head>`);
+  }
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        ${headAssets}
+      </head>
+      <body style="margin:0;padding:0">${html}</body>
+    </html>
+  `;
+}
+
 export function StudentPage({ roomCode }: { roomCode: string }) {
   const [studentName, setStudentName] = useState('');
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -42,23 +67,13 @@ export function StudentPage({ roomCode }: { roomCode: string }) {
 
   const generateIframeSrcDoc = (candidate: Candidate | undefined): string => {
     if (!candidate) return '<html><body style="background:#000;margin:0;padding:0"></body></html>';
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <style>${candidate.css}</style>
-        </head>
-        <body style="margin:0;padding:0">${candidate.html}</body>
-      </html>
-    `;
+    return buildIframeSrcDoc(candidate);
   };
 
   const iframeSrc = useMemo(() => {
     const candidate = state?.candidates[state?.currentIndex || 0];
     if (!candidate) return undefined;
-    if (candidate.css.trim() === '' && candidate.html.trim().startsWith('<iframe')) {
+    if (candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim())) {
       const match = candidate.html.match(/src=["']([^"']+)["']/);
       if (match) return match[1];
     }
@@ -91,7 +106,7 @@ export function StudentPage({ roomCode }: { roomCode: string }) {
 
   if (!hasJoined || !isConnected) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="login-page min-h-screen flex items-center justify-center p-4">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <h1 className="text-2xl font-bold text-gray-900 text-center mb-6">Unirse al Concurso</h1>
           {!pendingName ? (
@@ -299,18 +314,8 @@ function TiebreakView({ state, onRank, timer }: { state: RoomState; onRank: (ord
                 </div>
                  <iframe
                    key={`tiebreak-${candidate.id}`}
-                   src={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
-                   srcDoc={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? undefined : `
-                     <!DOCTYPE html>
-                     <html>
-                       <head>
-                         <meta charset="UTF-8">
-                         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                         <style>${candidate.css}</style>
-                       </head>
-                       <body style="margin:0;padding:0">${candidate.html}</body>
-                     </html>
-                   `}
+                   src={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
+                   srcDoc={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? undefined : buildIframeSrcDoc(candidate)}
                    className="w-full h-full border-0"
                    sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups"
                  />
@@ -336,16 +341,11 @@ function TiebreakView({ state, onRank, timer }: { state: RoomState; onRank: (ord
 }
 
 function PodiumView({ state }: { state: RoomState }) {
-  const scores = new Map<string, number>();
-  state.candidates.forEach(c => scores.set(c.id, 0));
-    state.votes.forEach(v => {
-    const total = v.scores.coherence + v.scores.effort + v.scores.originality;
-    scores.set(v.candidateId, (scores.get(v.candidateId) || 0) + total);
-  });
-  const sorted = [...state.candidates].sort((a, b) => (scores.get(b.id) || 0) - (scores.get(a.id) || 0));
+  const scores = state.finalScores || {};
+  const sorted = [...state.candidates].sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-b from-purple-900 via-blue-900 to-gray-900 flex flex-col items-center justify-center p-4 overflow-y-auto">
+    <div className="podium-page fixed inset-0 flex flex-col items-center justify-center p-4 overflow-y-auto">
       <motion.h1 initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-4xl md:text-6xl font-bold text-white mb-8 text-center">
         🏆 Podio Final 🏆
       </motion.h1>
@@ -373,24 +373,14 @@ function PodiumView({ state }: { state: RoomState }) {
             ][index]}`}>
                <iframe
                  key={`podium-3-${candidate.id}`}
-                 src={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
-                 srcDoc={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? undefined : `
-                   <!DOCTYPE html>
-                   <html>
-                     <head>
-                       <meta charset="UTF-8">
-                       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                       <style>${candidate.css}</style>
-                     </head>
-                     <body style="margin:0;padding:0">${candidate.html}</body>
-                   </html>
-                 `}
+                 src={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
+                 srcDoc={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? undefined : buildIframeSrcDoc(candidate)}
                  className="w-full h-full border-0"
                  sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups"
                />
             </div>
             <p className="mt-3 text-white font-semibold text-lg text-center">{candidate.name}</p>
-            <p className="text-yellow-300 font-medium">Puntuación: {scores.get(candidate.id) || 0}</p>
+            <p className="text-yellow-300 font-medium">Puntuación: {(scores[candidate.id] || 0).toFixed(1)}</p>
           </motion.div>
         ))}
       </div>
@@ -413,25 +403,15 @@ function PodiumView({ state }: { state: RoomState }) {
                 <div className="w-16 h-16 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
                   <iframe
                     key={`podium-rest-${candidate.id}`}
-                    src={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
-                    srcDoc={candidate.css.trim() === '' && /<iframe/i.test(candidate.html) ? undefined : `
-                      <!DOCTYPE html>
-                      <html>
-                        <head>
-                          <meta charset="UTF-8">
-                          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                          <style>${candidate.css}</style>
-                        </head>
-                        <body style="margin:0;padding:0">${candidate.html}</body>
-                      </html>
-                    `}
+                    src={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? (candidate.html.match(/src=["']([^"']+)["']/)?.[1]) : undefined}
+                    srcDoc={candidate.css.trim() === '' && /^<iframe\b/i.test(candidate.html.trim()) ? undefined : buildIframeSrcDoc(candidate)}
                     className="w-full h-full border-0"
                     sandbox="allow-scripts allow-same-origin allow-forms allow-pointer-lock allow-popups"
                   />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-semibold truncate">{candidate.name}</p>
-                  <p className="text-gray-300 text-sm">Puntuación: {scores.get(candidate.id) || 0}</p>
+                  <p className="text-gray-300 text-sm">Puntuación: {(scores[candidate.id] || 0).toFixed(1)}</p>
                 </div>
               </motion.li>
             ))}

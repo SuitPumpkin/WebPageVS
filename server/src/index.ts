@@ -7,8 +7,8 @@ import cors from 'cors';
 import QRCode from 'qrcode';
 import { validateLogin } from './auth.js';
 import { 
-  createRoom, getRoom, deleteRoom, addCandidate, removeCandidate,
-  startVoting, pauseTimer, nextCandidate, skipCandidate, endVoting,
+  createRoom, getRoom, closeRoom, addCandidate, removeCandidate,
+  startVoting, pauseTimer, nextCandidate, skipCandidate, endVoting, updateCandidate,
   submitVote, submitRanking, addStudent, endTiebreak,
   handleAdminMessage, handleStudentMessage, setStudentWs, removeStudent,
   RoomState,
@@ -41,11 +41,18 @@ app.post('/api/login', (req, res) => {
 });
 
 app.post('/api/create-room', async (req, res) => {
-  const { roundDuration } = req.body;
+  const { roundDuration, candidates = [] } = req.body;
   
   // Create room without requiring existing WebSocket
   // Admin will connect via WebSocket after getting roomCode
-  const { roomCode, state } = createRoom(null as any, roundDuration || 5);
+  const { roomCode, state } = createRoom(null, Number(roundDuration) > 0 ? Number(roundDuration) : 5);
+  if (Array.isArray(candidates)) {
+    candidates.forEach((candidate) => {
+      if (candidate && typeof candidate.name === 'string' && candidate.name.trim()) {
+        addCandidate(roomCode, candidate.name, String(candidate.html || ''), String(candidate.css || ''));
+      }
+    });
+  }
   const roomUrl = `${req.protocol}://${req.get('host')}/student/${roomCode}`;
   const qrCode = await QRCode.toDataURL(roomUrl);
   
@@ -61,7 +68,16 @@ app.get('/api/room/:roomCode', (req, res) => {
 });
 
 app.delete('/api/room/:roomCode', (req, res) => {
-  deleteRoom(req.params.roomCode);
+  const closed = closeRoom(req.params.roomCode);
+  res.json({ success: closed });
+});
+
+app.patch('/api/room/:roomCode/candidates/:candidateId', (req, res) => {
+  const { name, html, css } = req.body;
+  const updated = updateCandidate(req.params.roomCode, req.params.candidateId, name, html, css);
+  if (!updated) {
+    return res.status(409).json({ success: false, message: 'La sala no está esperando o el participante no existe' });
+  }
   res.json({ success: true });
 });
 
@@ -75,6 +91,7 @@ function getPublicRoomState(room: RoomState) {
     students: room.students.map(s => ({ id: s.id, name: s.name, hasVoted: s.hasVoted, hasRanked: s.hasRanked })),
     timerEnd: room.timerEnd,
     roundDuration: room.roundDuration,
+    finalScores: room.finalScores,
   };
 }
 
@@ -105,6 +122,7 @@ wss.on('connection', (ws, req) => {
           students: room.students.map(s => ({ id: s.id, name: s.name, hasVoted: s.hasVoted, hasRanked: s.hasRanked })),
           timerEnd: room.timerEnd,
           roundDuration: room.roundDuration,
+          finalScores: room.finalScores,
         },
       };
       ws.send(JSON.stringify(state));
@@ -142,6 +160,7 @@ wss.on('connection', (ws, req) => {
           students: room.students.map(s => ({ id: s.id, name: s.name, hasVoted: s.hasVoted, hasRanked: s.hasRanked })),
           timerEnd: room.timerEnd,
           roundDuration: room.roundDuration,
+          finalScores: room.finalScores,
         },
       };
       ws.send(JSON.stringify(state));
