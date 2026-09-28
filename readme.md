@@ -73,6 +73,50 @@ Antes de publicar el proyecto:
 - Usa HTTPS para que el QR genere enlaces seguros y los WebSocket usen `wss://`.
 - Configura límites y autenticación adecuados si la aplicación se usará fuera del aula.
 
+## Ejecutar con Docker
+
+La imagen incluye el frontend compilado, la API y el servidor WebSocket. El profesor solo necesita tener Docker instalado.
+
+### Construir la imagen
+
+```bash
+docker build -t webpagevs:latest .
+```
+
+### Ejecutar la aplicación
+
+```bash
+docker run --rm -p 3000:3000 \
+	-e ADMIN_USER=profesor \
+	-e ADMIN_PASS=cambia-esta-clave \
+	--name webpagevs \
+	webpagevs:latest
+```
+
+Después, abre `http://localhost:3000`. Para compartirla con los alumnos desde otros dispositivos, el ordenador del profesor debe ser accesible en la red local o la imagen debe ejecutarse en un servidor público con HTTPS y WebSocket habilitado.
+
+### Compartir la imagen
+
+Para subirla a Docker Hub, inicia sesión y usa el nombre de tu cuenta:
+
+```bash
+docker login
+docker tag webpagevs:latest TU_USUARIO/webpagevs:latest
+docker push TU_USUARIO/webpagevs:latest
+```
+
+Tu profesor podrá descargarla y ejecutarla con:
+
+```bash
+docker pull TU_USUARIO/webpagevs:latest
+docker run --rm -p 3000:3000 \
+	-e ADMIN_USER=profesor \
+	-e ADMIN_PASS=cambia-esta-clave \
+	TU_USUARIO/webpagevs:latest
+```
+
+No incluyas el archivo `.env` dentro de la imagen ni publiques credenciales reales. Las credenciales se pasan al iniciar el contenedor mediante variables de entorno.
+
 ## Scripts
 
 ```bash
