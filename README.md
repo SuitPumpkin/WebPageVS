@@ -4,6 +4,8 @@
 
 **WebPageVS** es una plataforma para organizar concursos de páginas web en clase. El profesor prepara una cola de proyectos, comparte una sala y guía una ronda de votación en tiempo real mientras los alumnos visualizan cada propuesta desde su propio dispositivo.
 
+> 🌐 **Está desplegada y se puede usar:** <https://webpagevs.onrender.com/> · [Código](https://github.com/SuitPumpkin/WebPageVS)
+>
 > Diseñado para una clase de programación: rápido de preparar, sencillo de compartir y claro durante la competición.
 
 ## Vista rápida
@@ -52,7 +54,22 @@ La aplicación queda disponible en:
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:3000`
 
-El acceso local usa las variables `ADMIN_USER` y `ADMIN_PASS` del archivo `.env`. Si no existen, el fallback de desarrollo es `admin` / `admin123`.
+El acceso local **requiere** las variables `ADMIN_USER` y `ADMIN_PASS` en el archivo `.env` (ver
+`.env.example`). **Si no están definidas el servidor no arranca**: no hay credenciales por defecto
+en ninguna parte del código.
+
+## Configuración
+
+Copia `.env.example` a `.env` y define las dos variables:
+
+```bash
+ADMIN_USER=profesor
+ADMIN_PASS=una-clave-larga-y-unica
+PORT=3000
+```
+
+> 🔐 **No subas `.env` al repositorio.** Está en `.gitignore`. Las credenciales se pasan al iniciar
+> el contenedor como variables de entorno, nunca como archivo.
 
 ## Uso en clase
 
@@ -65,13 +82,32 @@ El acceso local usa las variables `ADMIN_USER` y `ADMIN_PASS` del archivo `.env`
 
 ## Compartirlo fuera de la red local
 
-`localhost` solo funciona en el equipo donde se ejecuta la aplicación. Para que los alumnos se conecten desde sus propios dispositivos, el backend debe desplegarse en una URL pública con WebSocket habilitado y el frontend debe apuntar a ese mismo dominio.
+`localhost` solo funciona en el equipo donde se ejecuta la aplicación. Para que los alumnos se
+conecten desde sus propios dispositivos, el backend debe desplegarse en una URL pública con WebSocket
+habilitado y el frontend debe apuntar a ese mismo dominio.
 
-Antes de publicar el proyecto:
+**Ya está hecho:** la aplicación corre en <https://webpagevs.onrender.com/> con HTTPS, `wss://` y
+el frontend compilado servido desde el mismo origen.
 
-- Cambia las credenciales de administrador mediante variables de entorno.
+Antes de publicarla en cualquier otro sitio:
+
+- **Define `ADMIN_USER` y `ADMIN_PASS` en el panel del hosting.** La aplicación no arranca sin ellas.
 - Usa HTTPS para que el QR genere enlaces seguros y los WebSocket usen `wss://`.
 - Configura límites y autenticación adecuados si la aplicación se usará fuera del aula.
+
+## Limitaciones conocidas
+
+Se listan aquí a propósito, para que nadie las descubra en producción:
+
+| Limitación | Consecuencia |
+|---|---|
+| **El estado de las salas vive en memoria** (`server/src/websocket.ts`) | Cualquier reinicio del contenedor **borra todas las salas** |
+| **Plan gratuito de Render: se duerme por inactividad** (~15 min) | Durante una **clase**, que es el caso de uso, el servicio puede dormirse a mitad de sesión. Al despertar hay un arranque en frío de 1–2 min |
+| **El acceso de profesor es un único par usuario/contraseña** | No hay cuentas individuales ni registro. Suficiente para un aula, no para uso multiusuario |
+| **Sin límite de votos ni de participantes por sala** | Si se expusiera fuera del aula, un aluno podría automatizar votos |
+
+Las tres primeras están en la lista de trabajo pendiente de [Estado del proyecto](#estado-del-proyecto).
+La cuarta es deliberada: el alcance del proyecto es el aula, y está dicho en vez de oculto.
 
 ## Ejecutar con Docker
 
@@ -135,4 +171,15 @@ server/   API Express, autenticación y WebSocket
 
 ## Estado del proyecto
 
-Proyecto académico en evolución para una clase de programación. La aplicación está preparada para pruebas locales y para continuar con el despliegue público, persistencia de salas y autenticación más completa.
+**Desplegado y en producción:** <https://webpagevs.onrender.com/>
+
+> ⚠️ **Albergado en el plan gratuito de Render, que se duerme por inactividad.** Durante una clase el
+> servicio puede dormirse a mitad de sesión y el primer alumno que escanea el QR espera un arranque
+> en frío de 1–2 minutos. Ver [Limitaciones conocidas](#limitaciones-conocidas).
+
+Trabajo pendiente, en orden de valor:
+
+1. **Persistir el estado de las salas.** Hoy vive en memoria, así que un reinicio del contenedor
+   borra la competición en curso. Es lo que más afecta a la experiencia en clase.
+2. **Autenticación por usuario** en vez de un único par profesor/contraseña.
+3. Límites y endurecimiento de la API si se usa fuera del aula.
